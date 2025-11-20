@@ -1,0 +1,21 @@
+[package]
+name = "dj-mqtt-msg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rumqttc = "0.24.0"
+serde = { version = "*", features = ["derive"] } # JSON 序列化/反序列化
+serde_json = "*" # JSON 解析
+tokio = { version = "*", features = ["full"] } # 异步运行时
+thiserror = "1.0" # 自定义错误处理
+log = "*" # 日志（可选，用于调试）
+env_logger = "*" # 日志输出（可选）
+anyhow = "*"
+sqlx = { version = "0.6", features = [
+    "runtime-tokio-native-tls",
+    "sqlite",
+    "json",
+]}
+toml = "*"
+sysinfo = "*"

@@ -1,0 +1,18 @@
+url = "fh2.wifizs.cn"
+topic = "thing/product/+/osd"
+username = "wasu"
+password = "wasu@2025"
+reconnect_interval_sec = 5
+max_reconnect = 10
+connect_timeout_sec = 10
+drone_type_no = "99-0-0"
+rtmp_url_format = "rtmp://fh2.wifizs.cn/dron_push/"
+db_path = "./predict.db"
+
+[[condition]]
+pitch = 30 # 30度以上
+height = 50 # 50米以下
+
+[[condition]]
+pitch = 80
+height = 160
