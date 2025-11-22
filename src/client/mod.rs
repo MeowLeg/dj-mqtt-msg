@@ -221,6 +221,9 @@ impl AsyncMqttJsonClient {
             .await?;
         let mut url = self.rtmp_url_format.clone();
         url.push_str(sn);
+        // todo
+        // 根据高度不同，重启dump程序，并给与不同的参数
+        // ffmpeg-dump-jpeg程序仅记录条件高度即可
         if !self.__exists_ffmpeg(sn)? {
             let _ = Command::new("./ffmpeg-dump-jpeg.exe")
                 .arg("--config")
