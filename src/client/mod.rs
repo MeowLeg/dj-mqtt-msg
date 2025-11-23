@@ -174,6 +174,7 @@ impl AsyncMqttJsonClient {
 
     /// 处理接收到的 MQTT JSON 消息
     async fn handle_message(&mut self, topic: &str, payload: &[u8]) -> Result<()> {
+        // println!("payload is {:?}", &payload);
         match Self::parse_json_message::<DJData>(payload) {
             Ok(data) => {
                 // 先通过sn获取uuid project_uuid organization_uuid
