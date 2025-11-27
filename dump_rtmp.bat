@@ -1,0 +1,1 @@
+ffmpeg-dump-jpeg.exe --url=rtmp://play-sh.quklive.com/live/1761274636335259  --project-uuid=358f2d9b-a54e-41c9-a7c2-dd1228d97847 --organization-uuid=43d03d01-cf1c-4f2f-b2c8-033cda596489 --uuid=0199e9c8-2193-736d-8e86-a8a64bb8c0f0

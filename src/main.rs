@@ -21,13 +21,16 @@ struct Config {
     drone_type_no: String,
     rtmp_url_format: String,
     db_path: String,
+    airport_feature: String,
+    drone_fly_mode_code: Vec<u8>,
+    drone_land_mode_code: Vec<u8>,
     conditions: Vec<Condition>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
 struct Condition {
-    pitch: i32,
-    height: i32,
+    pitch: f64,
+    height: f64,
 }
 
 fn get_current_timestamp_str() -> AnyResult<String> {

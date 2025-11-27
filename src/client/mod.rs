@@ -40,7 +40,7 @@ pub struct HostValue {
     pub sn: String,
 }
 
-#[derive(Debug, FromRow)]
+#[derive(Debug, Default, FromRow)]
 struct DronInfo {
     uuid: String,
     project_uuid: String,
@@ -65,6 +65,9 @@ pub struct AsyncMqttJsonClient {
     // 数据库
     db_path: String,
     // 判断是否启动抽帧的条件
+    airport_feature: String,
+    drone_fly_mode_code: Vec<u8>,
+    drone_land_mode_code: Vec<u8>,
     conditions: Vec<Condition>,
     fly_status: HashMap<String, bool>,
 }
@@ -85,6 +88,9 @@ impl AsyncMqttJsonClient {
             drone_type_no: cfg.drone_type_no.clone(),
             rtmp_url_format: cfg.rtmp_url_format.clone(),
             db_path: cfg.db_path.clone(),
+            airport_feature: cfg.airport_feature.clone(),
+            drone_fly_mode_code: cfg.drone_fly_mode_code.clone(),
+            drone_land_mode_code: cfg.drone_land_mode_code.clone(),
             conditions: cfg.conditions.clone(),
             fly_status: HashMap::new(),
         }
@@ -151,21 +157,27 @@ impl AsyncMqttJsonClient {
         serde_json::from_slice(payload).map_err(MqttJsonError::JsonParseError)
     }
 
+    fn is_airport(&self, sn: &str) -> bool {
+        sn.starts_with(&self.airport_feature)
+    }
+
     // 判断mqtt消息是否可以出发抽帧
     fn condition(&self, host: &Value) -> Result<bool> {
         let pitch = match host.get(&self.drone_type_no) {
             Some(Value::Object(o)) => match o.get("gimbal_pitch") {
-                Some(Value::Number(n)) => n.as_i64().unwrap_or(0) as i32,
-                _ => 0,
+                Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+                _ => 0.0,
             },
-            _ => 0,
+            _ => 0.0,
         }
         .abs();
         let height = match host.get("height") {
-            Some(Value::Number(n)) => n.as_i64().unwrap_or(0) as i32,
-            _ => 0,
+            Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+            _ => 0.0,
         }
         .abs();
+        println!("pitch: {}, height: {}", pitch, height);
+        // println!("---------------------------");
         Ok(self
             .conditions
             .iter()
@@ -174,22 +186,63 @@ impl AsyncMqttJsonClient {
 
     /// 处理接收到的 MQTT JSON 消息
     async fn handle_message(&mut self, topic: &str, payload: &[u8]) -> Result<()> {
-        // println!("payload is {:?}", &payload);
+        // 机场与飞机的sn编号规则存在差异：8UUXN3U00A043Z 1581F8HGD25110010060
+        // 同时存在多个飞机的数据，应该区分处理
+        // 需要存储不同飞机的状态，用来停止操作
         match Self::parse_json_message::<DJData>(payload) {
             Ok(data) => {
-                // 先通过sn获取uuid project_uuid organization_uuid
-                // 然后启动 ffmpeg 抽帧
+                if self.is_airport(&data.data.sn) {
+                    return Ok(());
+                }
+
+                // 准备启动 ffmpeg 抽帧
+                println!("sn: {}", data.data.sn);
                 if let Ok(b) = self.condition(&data.data.host) {
+                    println!("---------------------------");
+                    println!("> sn {} in action", &data.data.sn);
+                    // println!("data is {:?}", &data);
                     let mut fly_status = self.fly_status.clone();
                     let old_status = *fly_status.get(&data.data.sn).unwrap_or(&false);
-                    if !old_status && b {
-                        // 启动 ffmpeg 抽帧
-                        self.start_ffmpeg(&data.data.sn).await?;
-                    } else if old_status && !b {
-                        // 停止 ffmpeg 抽帧
-                        self.stop_ffmpeg(&data.data.sn)?;
+                    let mode_code: u8 = match data.data.host.get("mode_code") {
+                        Some(Value::Number(num)) => num.as_u64().unwrap_or(0) as u8,
+                        _ => 0,
+                    };
+                    println!(
+                        "> sn {} mode_code: {}, old_status: {}",
+                        &data.data.sn, mode_code, old_status
+                    );
+                    match mode_code {
+                        // 条件太脆弱
+                        m if self.drone_fly_mode_code.iter().any(|&x| x == m) => {
+                            if !old_status && b {
+                                // 这里必须信任流服务的存在
+                                // 开始 ffmpeg 抽帧
+                                println!("> sn: {}, start ffmpeg", &data.data.sn);
+                                if let Ok(_) = self.start_ffmpeg(&data.data.sn).await {
+                                    fly_status.insert(data.data.sn, true);
+                                }
+                            } else if old_status && !b {
+                                // 停止 ffmpeg 抽帧
+                                println!("> sn: {}, end ffmpeg", &data.data.sn);
+                                if let Ok(_) = self.stop_ffmpeg(&data.data.sn) {
+                                    fly_status.insert(data.data.sn, false);
+                                }
+                            }
+                        }
+                        n if self.drone_land_mode_code.iter().any(|&x| x == n) => {
+                            if old_status && !b {
+                                // 停止 ffmpeg 抽帧
+                                println!("> sn: {}, end ffmpeg", &data.data.sn);
+                                if let Ok(_) = self.stop_ffmpeg(&data.data.sn) {
+                                    fly_status.insert(data.data.sn, false);
+                                }
+                            }
+                        }
+                        _ => {
+                            // 不确定是否需要这么做
+                            // fly_status.insert(data.data.sn, false);
+                        }
                     }
-                    fly_status.insert(data.data.sn, b);
                     self.fly_status = fly_status;
                 }
             }
@@ -214,19 +267,25 @@ impl AsyncMqttJsonClient {
     async fn start_ffmpeg(&self, sn: &str) -> Result<()> {
         // 启动 MQTT 客户端
         let mut conn = SqliteConnection::connect(&self.db_path).await?;
-        let sql = "SELECT uuid, project_uuid, organization_uuid FROM sn where sn = ? and create_timestamp > ?";
-        let row = sqlx::query_as::<Sqlite, DronInfo>(sql)
+        let sql = "SELECT uuid, project_uuid, organization_uuid FROM sn where sn = ? and created_timestamp > ?";
+        // 如没有收到启动信号，也强制启动，用空值
+        let row = match sqlx::query_as::<Sqlite, DronInfo>(sql)
             .bind(sn)
             .bind(self.__20minu_before()?)
             .fetch_one(&mut conn)
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                println!("> Err: {}", e);
+                DronInfo::default()
+            }
+        };
         let mut url = self.rtmp_url_format.clone();
         url.push_str(sn);
-        // todo
-        // 根据高度不同，重启dump程序，并给与不同的参数
-        // ffmpeg-dump-jpeg程序仅记录条件高度即可
+        println!("> url: {}", &url);
         if !self.__exists_ffmpeg(sn)? {
-            let _ = Command::new("./ffmpeg-dump-jpeg.exe")
+            match Command::new("./ffmpeg-dump-jpeg.exe")
                 .arg("--config")
                 .arg("./dump_config.toml")
                 .arg("--url")
@@ -237,7 +296,11 @@ impl AsyncMqttJsonClient {
                 .arg(&row.project_uuid)
                 .arg("--organization-uuid")
                 .arg(&row.organization_uuid)
-                .spawn()?;
+                .spawn()
+            {
+                Ok(_) => println!("ffmpeg-dump-jpeg started"),
+                Err(e) => println!("ffmpeg-dump-jpeg failed to start: {}", e),
+            }
         }
 
         Ok(())

@@ -17,7 +17,8 @@ create table if not exists sn (
     uuid text unique,
     project_uuid text not null default '',
     organization_uuid text not null default '',
-    created_timestamp integer not null default (strftime('%s', datetime('now', 'localtime')))
+    created_timestamp integer not null default (strftime('%s', datetime('now', 'localtime'))),
+    create_date text default (strftime('%Y-%m-%d %H:%M:%S', datetime('now', 'localtime')))
 );
 
 create table if not exists predict (

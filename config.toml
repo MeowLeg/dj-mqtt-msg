@@ -6,13 +6,16 @@ reconnect_interval_sec = 5
 max_reconnect = 10
 connect_timeout_sec = 10
 drone_type_no = "99-0-0"
-rtmp_url_format = "rtmp://fh2.wifizs.cn/dron_push/"
+rtmp_url_format = "rtmp://fh2.wifizs.cn/drone_push/"
 db_path = "./predict.db"
+airport_feature = "8UU"
+drone_fly_mode_code = [5]
+drone_land_mode_code = [0, 9, 10, 11]
 
 [[conditions]]
 pitch = 30 # 30度以上
-height = 50 # 50米以下
+height = 250 # 50米以下
 
-[[conditions]]
-pitch = 80
-height = 160
+# [[conditions]]
+# pitch = 80
+# height = 350
